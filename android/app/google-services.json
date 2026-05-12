@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "714665461834",
+    "project_id": "gleegather-lms",
+    "storage_bucket": "gleegather-lms.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:714665461834:android:4aa42b47119e7b1d6cfeb3",
+        "android_client_info": {
+          "package_name": "com.gleegather_lms"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASwphhE3atylju8cPGxjrFrdd_uZyR0n8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:714665461834:android:819f0f0728f4cf986cfeb3",
+        "android_client_info": {
+          "package_name": "com.tepoutama.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyASwphhE3atylju8cPGxjrFrdd_uZyR0n8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

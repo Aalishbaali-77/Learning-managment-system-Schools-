@@ -1,0 +1,523 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  FlatList,
+  Alert,
+  StyleSheet,
+} from 'react-native';
+import DropDownPicker from 'react-native-dropdown-picker';
+import { moderateScale, ScaledSheet } from 'react-native-size-matters';
+import Icon from 'react-native-vector-icons/MaterialIcons';
+import api from '../../api'; // Make sure this is the correct import for your API
+import { Calendar } from 'react-native-calendars';
+import { Picker } from '@react-native-picker/picker';
+import { useUser } from '../../Context/UserContext';
+import { useNavigation } from '@react-navigation/native';
+import { Dropdown } from 'react-native-element-dropdown';
+import { ScrollView } from 'react-native-gesture-handler';
+
+const CheckTaskScreen = ({ route }) => {
+  const taskId = route.params?.task_id || route.params?.taskId;
+  const student_task_status = route.params?.student_task_status;
+  const subjectName = route.params?.subjectName;
+  const [studentsData, setStudentsData] = useState([]);
+  const [dropdownValues, setDropdownValues] = useState({});
+  const [selectedDates, setSelectedDates] = useState({});
+  const [searchQuery, setSearchQuery] = useState(''); // State for search query
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [currentStudentId, setCurrentStudentId] = useState(null);
+  const navigation = useNavigation();
+  const [loading, setLoading] = useState(false);
+  const { user } = useUser();
+  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [mediaData, setMediaData] = useState<Record<string, any[]>>({});
+
+  // Function to fetch student list based on task_id
+  const fetchStudentList = async () => {
+    if (!taskId) {
+      Alert.alert('Error', 'Task ID is missing!');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await api.protected.post(
+        'teacher/assign-tasks/studentList',
+        {
+          task_id: taskId,
+        },
+      );
+
+      if (response?.data?.success) {
+        const studentList = response.data.data;
+        const statusValues = {};
+        const dateValues = {};
+        const mediaValues = {};
+        const dueDate = response.data.due_date;
+
+        studentList.forEach(student => {
+          statusValues[student.id] =
+            student.assign_task_status === 1 ? "Pending" : student.assign_task_status === 2 ? "Completed" : student.assign_task_status == 3 ? "Late" : "Pending"
+          dateValues[student.id] = student.submission_date || null; // Store submission date
+          mediaValues[student.id] = student.assign_tasks_media_by_student || [];
+        });
+
+        setStudentsData(studentList);
+        setDropdownValues(statusValues);
+        setSelectedDates(dateValues);
+        setMediaData(mediaValues); // Store media separately
+        setDueDate(dueDate);
+      } else {
+        Alert.alert(
+          'Error',
+          response?.data?.message || 'Failed to fetch student list.',
+        );
+      }
+    } catch (error) {
+     // console.error('Error fetching student list:', error);
+      Alert.alert(
+        'Error',
+        'Unable to fetch student list. Please try again later.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch student list on component mount
+  useEffect(() => {
+    fetchStudentList();
+  }, [taskId]);
+
+  const filteredStudents = studentsData.filter(student => {
+    return student.student_name
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+  });
+
+  const postStudentTask = async () => {
+    // console.log('Students Data:', studentsData);
+    const today = new Date().toISOString().split('T')[0];
+    const payload = {
+      school_id: user?.company_id, // Replace with the actual school ID
+      school_campus_id: user?.school_campus_id, // Replace with the actual school campus ID
+      taskArray: studentsData.map(student => {
+        let status;
+        if (dropdownValues[student.id] === 'Complete') {
+          status = 2;
+        } else if (dropdownValues[student.id] === 'Pending') {
+          status = 1;
+        } else if (dropdownValues[student.id] === 'Late') {
+          status = 3;
+        }
+        const submissionDate =
+          status === 2
+            ? new Date().toISOString().split('T')[0]
+            : selectedDates[student.id];
+
+        return {
+          assign_task_id: taskId, // Ensure this key exists in studentsData
+          student_id: student.student_id,
+          assign_task_status: status,
+          submission_date: submissionDate, // Set today's date only if status is "Complete"
+        };
+      }),
+    };
+    // console.log('Payload being sent:', payload); // Log payload for debugging
+
+    setLoading(true);
+    try {
+      const response = await api.protected.post(
+        'teacher/assign-tasks/update-multiple-student-task-status',
+        payload,
+      );
+
+      // console.log('API Response:', response.data); // Log the full response
+
+      if (response?.data?.success) {
+        Alert.alert(
+          'Success',
+          response.data.message ||
+          'Task assignment statuses updated successfully!',
+        );
+      } else {
+       // console.error('API Error:', response?.data); // Log the error response if success is false
+        Alert.alert(
+          'Error',
+          response?.data?.message || 'Failed to update task statuses.',
+        );
+      }
+    } catch (error) {
+      // Log detailed error information
+    //  console.error('Error updating task statuses:', error);
+      if (error.response) {
+        // console.error('Error Response Data:', error.response.data); // Server error response
+        // console.error('Error Response Status:', error.response.status); // HTTP status code
+        // console.error('Error Response Headers:', error.response.headers); // HTTP headers
+      } else if (error.request) {
+       // console.error('Error Request:', error.request); // Request made but no response received
+      } else {
+       // console.error('General Error:', error.message); // General error message
+      }
+      Alert.alert(
+        'Error',
+        'Unable to update task statuses. Please try again later.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const statusColors = {
+    Pending: '#FF4C4C',
+    Complete: '#5BCB02',
+  };
+
+  const handleDateSelect = day => {
+    if (currentStudentId) {
+      setSelectedDates(prev => ({
+        ...prev,
+        [currentStudentId]: day.dateString, // Store selected date
+      }));
+    }
+    setShowCalendar(false);
+  };
+
+  const renderItem = item => {
+    const statusColors = {
+      Pending: '#FF4C4C',
+      Complete: '#5BCB02',
+      UnSubmit: '#444',
+      Late: '#FFA500',
+    };
+
+    return (
+      <View style={styles.tableRow} key={item.id}>
+  <Text style={styles.nameCell} >{item.student_name}</Text>
+
+  <View style={styles.statusCell}>
+    <Text style={styles.statusText} numberOfLines={1} ellipsizeMode="tail">
+      {dropdownValues[item.id] || 'Pending'}
+    </Text>
+  </View>
+
+  <Text style={styles.dateCell} numberOfLines={1}>{item.submission_date || 'Not Submitted'}</Text>
+
+  <View style={styles.editContainer}>
+    <TouchableOpacity
+      style={styles.editIcon}
+      onPress={() =>
+        navigation.navigate("ViewTask", {
+          taskId,
+          studentData: item,
+          dueDate,
+          mediaData: mediaData[item.id] || [],
+        })
+      }
+    >
+      <Icon name="edit-square" size={moderateScale(18)} color="#000" />
+    </TouchableOpacity>
+  </View>
+</View>
+    );
+  };
+
+  return (
+    <ScrollView style={{ flex: 1 }}>
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Icon name="arrow-back" size={moderateScale(24)} color="#000" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Check Task</Text>
+          <TouchableOpacity>
+            <Icon name="notifications" size={moderateScale(24)} color="#000" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Search Input */}
+        <TextInput
+          placeholder="Search Task"
+          style={styles.searchInput}
+          placeholderTextColor="#aaa"
+          value={searchQuery}
+          onChangeText={setSearchQuery} // Update the search query
+        />
+
+        {/* Summary */}
+        <Text style={styles.summaryText}>
+          Total Assigned: {studentsData.length} Students
+        </Text>
+        <View style={styles.summaryContainer}>
+          <View style={styles.statsContainer}>
+            <Text style={styles.statsText}>
+              Completed:{' '}
+              {
+                studentsData.filter(student => student.assign_task_status === 2)
+                  .length
+              }
+            </Text>
+            <Text style={styles.statsText}>
+              Pending:{' '}
+              {
+                studentsData.filter(student => student.assign_task_status === 1)
+                  .length
+              }
+            </Text>
+            <Text style={styles.statsText}>
+              Late:{' '}
+              {
+                studentsData.filter(student => student.assign_task_status === 3)
+                  .length
+              }
+            </Text>
+          </View>
+        </View>
+        {/* Table Header */}
+        <View style={styles.tableHeader}>
+          <Text style={styles.tableHeaderText}>Name</Text>
+          <Text style={styles.tableHeaderText}>Status</Text>
+          <Text style={styles.tableHeaderText}>Submit Date</Text>
+          <Text style={styles.tableHeaderText}>Check</Text>
+        </View>
+
+        {loading ? (
+          <Text>Loading...</Text>
+        ) : (
+          <>{filteredStudents.map(renderItem)}</>
+        )}
+
+        {/* Calendar for Date Selection */}
+        {showCalendar && (
+          <Calendar
+            onDayPress={handleDateSelect}
+            markedDates={{
+              [selectedDates[currentStudentId]]: {
+                selected: true,
+                marked: true,
+                selectedColor: '#00B0FF',
+              },
+            }}
+            style={styles.calendar}
+          />
+        )}
+
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = ScaledSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: '16@ms',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '16@vs',
+  },
+  headerTitle: {
+    fontSize: '18@ms',
+    textAlign: 'center',
+    flex: 1,
+    fontFamily: 'Poppins-Bold',
+    color: '#000',
+  },
+  picker: {
+    color: '#FFF',
+    height: '25@vs',
+    bottom: '10@vs',
+  },
+  datePickerButton: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  calendar: {
+    borderTopWidth: '1@s', // Fixed scaling for border width
+    borderColor: '#ddd',
+    paddingTop: '5@vs',
+  },
+  searchInput: {
+    height: '40@vs',
+    borderWidth: '1@s',
+    borderColor: '#ccc',
+    borderRadius: '8@s',
+    paddingHorizontal: '10@vs',
+    marginBottom: '16@vs',
+    color: '#000',
+    fontFamily: 'Poppins-Regular',
+  },
+  summaryText: {
+    fontSize: '15@ms',
+    marginBottom: '4@vs',
+    fontFamily: 'Poppins-SemiBold',
+    color: '#000',
+  },
+  // editIcon: {
+  //   marginLeft: moderateScale(30),
+  // },
+  summaryContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: '15@vs',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: '30@s', // Adjusted spacing for consistency
+  },
+  statsText: {
+    fontSize: '12@ms',
+    color: '#3b3b3b',
+    fontFamily: 'Poppins-Regular',
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#f9f9f9',
+    paddingVertical: '10@vs',
+    paddingHorizontal: '8@s',
+  },
+  dropdownItemText: {
+    fontSize: '12@ms',
+    color: '#000',
+    padding: '10@s',
+  },
+  tableHeaderText: {
+    fontSize: '12@ms',
+    flex: 1,
+    textAlign: 'center',
+    fontFamily: 'Poppins-SemiBold',
+    color: '#000',
+    
+  },
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: '8@vs',
+    
+  },
+  nameCell: {
+    flex: 1.5, 
+    fontSize: '10@ms',
+    textAlign: 'left',
+    fontFamily: 'Poppins-Regular',
+    paddingLeft: '10@s',
+    color: '#000',
+    minWidth: '80@s',
+  },
+  
+  statusCell: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '80@s', // Reduced width
+  },
+  
+  statusText: {
+    fontSize: '10@ms',
+    fontFamily: 'Poppins-Regular',
+    color: '#000',
+    marginRight: '20@s', // Reduced margin to avoid pushing content
+  },
+  
+  dateCell: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: '10@ms',
+    fontFamily: 'Poppins-Regular',
+    color: '#000',
+    minWidth: '75@s',
+    marginRight: '15@s',
+  },
+  
+  editContainer: {
+    flex: 0.5,
+    alignItems: 'center',
+    justifyContent: 'center', // Ensures proper placement
+    minWidth: '50@s', // Gives space for the icon
+  },
+  
+  editIcon: {
+    padding: '5@s',
+    alignSelf: 'center', // Keeps it centered
+  },
+  
+  dropdownContainer: {
+    flex: 1,
+    height: '40@vs',
+    marginLeft: '8@s',
+  },
+  // statusText: {
+  //   fontSize: '11@ms',
+  //   color: '#000',
+  //   fontFamily: 'Poppins-Regular',
+  //   marginRight: '50@s',
+  // },
+  // dateCell: {
+  //   flex: 1,
+  //   fontSize: '14@ms',
+  //   textAlign: 'center',
+  //   fontFamily: 'Poppins-Regular',
+  // },
+  // editContainer: {
+  //   flex: 1,
+  //   height: '40@vs',
+  //   marginLeft: '40@s',
+  // },
+  dropdown: {
+    flex: 1,
+    height: '40@vs',
+    borderRadius: '8@s',
+    paddingHorizontal: '8@s',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    zIndex: 100,
+  },
+  dropdownPlaceholder: {
+    fontSize: '14@ms',
+    color: '#000',
+    fontFamily: 'Poppins-Regular',
+  },
+  dropdownSelectedText: {
+    fontSize: '10@ms',
+    color: '#fff',
+    fontFamily: 'Poppins-Regular',
+  },
+  dropdownContainerStyle: {
+    borderWidth: '1@s',
+    borderColor: '#ddd',
+    borderRadius: '8@s',
+    marginTop: '8@vs',
+    zIndex: 100,
+  },
+  dropdownOptions: {
+    backgroundColor: '#f9f9f9',
+  },
+  saveButton: {
+    backgroundColor: '#f00',
+    paddingVertical: '12@vs',
+    borderRadius: '8@s',
+    alignItems: 'center',
+    marginTop: '16@vs',
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: '16@ms',
+    fontFamily: 'Poppins-Bold',
+  },
+  tableContainer: {
+    paddingBottom: '16@vs',
+    paddingTop: '8@vs',
+  },
+});
+
+
+export default CheckTaskScreen;
